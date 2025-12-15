@@ -1,2 +1,4 @@
 .DS_Store
 *.streamDeckPlugin
+logs
+node_modules

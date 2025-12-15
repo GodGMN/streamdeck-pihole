@@ -55,8 +55,17 @@
                 </div> -->
                 <select name="protocol-input" id="protocol-input" class="sdpi-item-value select">
                     <option value="http" selected>HTTP</option>
-                    <option value="https">HTTPS</option>
+                    <option value="https-1">HTTPS (strict)</option>
+                    <option value="https-2">HTTPS (allow self-signed certs)</option>
                 </select>
+            </div>
+
+            <div id="connection-error" class="connection-error caution" style="display: none;">
+                <span id="error-message"></span> <a href="#" id="retry-link">Retry</a>
+            </div>
+
+            <div id="connection-success" class="connection-success info" style="display: none;">
+                Connection successful
             </div>
 
         </div>
