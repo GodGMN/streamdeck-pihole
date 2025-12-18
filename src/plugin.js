@@ -1,15 +1,21 @@
 import * as http from "http";
 import * as https from "https";
-import streamDeck, { SingletonAction } from "@elgato/streamdeck";
+import streamDeck, { LogLevel, SingletonAction } from "@elgato/streamdeck";
 
+streamDeck.logger.setLevel(LogLevel.INFO);
 var instances = {}
+var sessionCache = {}
 
 // Helper function to make HTTP/HTTPS requests
-function makeRequest(method, url, headers = {}, body = null, handler, allowInsecure = false) {
+function sendRequest(method, url, headers = {}, body = null, handler, allowInsecure = false) {
     const urlObj = new URL(url);
     const isHttps = urlObj.protocol === 'https:';
     const client = isHttps ? https : http;
-    
+
+    if (body && typeof body === 'object') {
+        headers['Content-Type'] = 'application/json';
+    }
+
     const options = {
         method: method,
         hostname: urlObj.hostname,
@@ -33,6 +39,11 @@ function makeRequest(method, url, headers = {}, body = null, handler, allowInsec
         });
         
         res.on('end', () => {
+            if (res.statusCode === 401) {
+                handler({ error: "Unauthorized", code: 401 });
+                return;
+            }
+
             try {
                 const parsed = JSON.parse(data);
                 handler(parsed);
@@ -63,23 +74,35 @@ function sendToPropertyInspector(_context, payload){
     streamDeck.ui.current?.sendToPropertyInspector(payload);
 }
 
-// get auth token from pi-hole API that is valid until 5 min of inactivity
-function pihole_connect(settings, handler){
+// get auth token from pi-hole API that is valid until 30 min of inactivity
+function pihole_connect({ settings, session }, handler){
     let req_addr = `${settings.protocol}://${settings.ph_addr}/api/auth`;
-    // streamDeck.logger.info(`call request to ${req_addr}`);
+    streamDeck.logger.debug(`POST request to ${req_addr}`);
     
-    makeRequest('POST', req_addr, {
-        'Content-Type': 'application/json'
-    }, { password: settings.ph_key }, handler, settings.allow_insecure);
+    if (session == null || session.valid === false){
+        sendRequest('POST', req_addr, {}, { password: settings.ph_key }, handler, settings.allow_insecure);
+    } else{
+        sendRequest('GET', req_addr, {
+            'X-FTL-SID': session.sid
+        }, null, response => {
+            if ("error" in response && response.code === 401){
+                sendRequest('POST', req_addr, {}, { password: settings.ph_key }, handler, settings.allow_insecure);
+            } else{
+                streamDeck.logger.debug("reusing existing session");
+                handler(response);
+            }
+        }, settings.allow_insecure);
+    }
 }
 
 // delete pi-hole session since API seats are limited
 function pihole_end({ settings, session }){
     if (session == null) return;
     let req_addr = `${settings.protocol}://${settings.ph_addr}/api/auth`;
-    // streamDeck.logger.info(`call request to ${req_addr}`);
-    
-    makeRequest('DELETE', req_addr, {
+    streamDeck.logger.debug(`DELETE request to ${req_addr}`);
+
+    session.valid = false;
+    sendRequest('DELETE', req_addr, {
         'X-FTL-SID': session.sid
     }, null, () => {}, settings.allow_insecure);
 }
@@ -87,9 +110,9 @@ function pihole_end({ settings, session }){
 // make a call to check if pi-hole is enabled
 function getBlockingStatus(settings, session, handler){
     let req_addr = `${settings.protocol}://${settings.ph_addr}/api/dns/blocking`;
-    // streamDeck.logger.info(`call request to ${req_addr}`);
+    streamDeck.logger.debug(`GET request to ${req_addr}`);
     
-    makeRequest('GET', req_addr, {
+    sendRequest('GET', req_addr, {
         'X-FTL-SID': session.sid
     }, null, handler, settings.allow_insecure);
 }
@@ -97,10 +120,9 @@ function getBlockingStatus(settings, session, handler){
 // make a call to enable or disable pi-hole
 function setBlockingStatus(settings, session, enabled, timer){
     let req_addr = `${settings.protocol}://${settings.ph_addr}/api/dns/blocking`;
-    // streamDeck.logger.info(`call request to ${req_addr}`);
+    streamDeck.logger.debug(`POST request to ${req_addr}`);
     
-    makeRequest('POST', req_addr, {
-        'Content-Type': 'application/json',
+    sendRequest('POST', req_addr, {
         'X-FTL-SID': session.sid
     }, { blocking: enabled, timer }, () => {}, settings.allow_insecure);
 }
@@ -108,9 +130,9 @@ function setBlockingStatus(settings, session, enabled, timer){
 // get stats for the pi-hole (# queries, # clients, etc.) and pass to a handler function
 function getStatsSummary(settings, session, handler){
     let req_addr = `${settings.protocol}://${settings.ph_addr}/api/stats/summary`;
-    // streamDeck.logger.info(`get_status request to ${req_addr}`);
+    streamDeck.logger.debug(`GET request to ${req_addr}`);
     
-    makeRequest('GET', req_addr, {
+    sendRequest('GET', req_addr, {
         'X-FTL-SID': session.sid
     }, null, handler, settings.allow_insecure);
 }
@@ -157,27 +179,27 @@ function enable(context){
 function pollPihole(context){
     let { settings, session } = instances[context];
     getBlockingStatus(settings, session, response => {
-        // streamDeck.logger.info(`response: ${JSON.stringify(response)}`)
+        streamDeck.logger.debug(`response: ${JSON.stringify(response)}`)
         if ("error" in response){ // couldn't reach p-h, display a warning
-            // streamDeck.logger.info(`${instances[context].action} error`)
+            streamDeck.logger.debug(`${instances[context].action} error`)
             streamDeck.actions.getActionById(context)?.showAlert();
             streamDeck.logger.error(response);
         }
         else{
             // set state according to whether p-h is enabled or disabled
             if (response.blocking == "disabled" && settings.show_status){
-                // streamDeck.logger.info(`${instances[context].action} offline`);
+                streamDeck.logger.debug(`${instances[context].action} offline`);
                 streamDeck.actions.getActionById(context)?.setState(1);
             }
             else if (response.blocking == "enabled" && settings.show_status){
-                // streamDeck.logger.info(`${instances[context].action} online`);
+                streamDeck.logger.debug(`${instances[context].action} online`);
                 streamDeck.actions.getActionById(context)?.setState(0);
             }
 
             // display stat, if desired
             if (settings.stat != "none"){
                 getStatsSummary(settings, session, response => {
-                    // streamDeck.logger.info(`response: ${JSON.stringify(response)}`)
+                    streamDeck.logger.debug(`response: ${JSON.stringify(response)}`)
                     if ("error" in response){
                         streamDeck.actions.getActionById(context)?.showAlert();
                         streamDeck.logger.error(response);
@@ -185,7 +207,7 @@ function pollPihole(context){
                     else{
                         // let stat = String(response[settings.stat]);
                         let stat = process_stat(response, settings.stat);
-                        // streamDeck.logger.info(stat);
+                        streamDeck.logger.debug(`${settings.stat}: ${stat}`);
                         streamDeck.actions.getActionById(context)?.setTitle(stat);
                     }
                 });
@@ -219,8 +241,25 @@ function process_stat(stats, type){
     }
 }
 
+function loadSessionCache(context, globalSettings){
+    if (globalSettings && "sessions" in globalSettings){
+        sessionCache = globalSettings.sessions;
+    }
+    if (sessionCache[context] && !("session" in instances[context])){
+        instances[context].session = { sid: sessionCache[context] };
+        delete sessionCache[context];
+    }
+}
+
+function saveSessionCache(context){
+    sessionCache[context] = instances[context].session.sid;
+    streamDeck.settings.setGlobalSettings({
+		sessions: sessionCache,
+	});
+}
+
 // write settings
-function writeSettings(context, action, settings){
+function writeSettings(context, action, settings, globalSettings){
     // write the settings
     if (!(context in instances)){ 
         instances[context] = {"action": action};
@@ -237,12 +276,14 @@ function writeSettings(context, action, settings){
     if ("poller" in instances[context]){
         clearInterval(instances[context].poller);
     }
-    pihole_end(instances[context]);
+    if (!("session" in instances[context])){
+        loadSessionCache(context, globalSettings);
+    }
 
     // poll p-h to get status
     instances[context].settings.show_status = true;
     const onReady = (response) => {
-        // streamDeck.logger.info(`response: ${JSON.stringify(response)}`)
+        streamDeck.logger.debug(`response: ${JSON.stringify(response)}`)
         if ("error" in response){
             streamDeck.actions.getActionById(context)?.showAlert();
             instances[context].errorState = response.error.message || response.error;
@@ -258,16 +299,17 @@ function writeSettings(context, action, settings){
                     (timeNow - instances[context].lastUpdateTime) > instances[context].session.validity;
                 instances[context].lastUpdateTime = timeNow;
                 if (sessionExpired){
+                    streamDeck.logger.debug("session expired, reconnecting");
                     clearInterval(instances[context].poller);
-                    pihole_connect(instances[context].settings, onReady);
+                    pihole_connect(instances[context], onReady);
                 } else{
                     pollPihole(context);
                 }
             }, Math.ceil(response.took) * 1000);
+            saveSessionCache(context);
         }
-        // streamDeck.logger.info(JSON.stringify(instances));
     }
-    pihole_connect(instances[context].settings, onReady);
+    pihole_connect(instances[context], onReady);
 }
 
 // Pi-hole Stream Deck Action
@@ -278,8 +320,9 @@ class PiholeAction extends SingletonAction {
         this.handler = handler;
     }
 
-    onWillAppear(ev) {
-        writeSettings(ev.action.id, this.manifestId, ev.payload.settings);
+    async onWillAppear(ev) {
+        const globalSettings = await streamDeck.settings.getGlobalSettings();
+        writeSettings(ev.action.id, this.manifestId, ev.payload.settings, globalSettings);
     }
     
     onWillDisappear(ev) {
@@ -319,17 +362,6 @@ class PiholeAction extends SingletonAction {
         this.handler(contextId);
     }
 }
-
-// Clean up all sessions when plugin exits
-let cleaned = false;
-function cleanup(){
-    if (cleaned) return;
-    cleaned = true;
-    // streamDeck.logger.info("exiting now");
-    Object.values(instances).forEach(pihole_end);
-}
-process.on('SIGTERM', cleanup);
-process.on('exit', cleanup);
 
 // Register and connect
 actions = {

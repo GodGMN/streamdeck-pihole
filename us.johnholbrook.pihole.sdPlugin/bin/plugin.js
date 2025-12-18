@@ -6304,11 +6304,16 @@ if (streamDeck.manifest.SDKVersion >= 3) {
 }
 
 // src/plugin.js
+streamDeck.logger.setLevel(LogLevel.INFO);
 var instances = {};
-function makeRequest(method, url, headers = {}, body = null, handler, allowInsecure = false) {
+var sessionCache = {};
+function sendRequest(method, url, headers = {}, body = null, handler, allowInsecure = false) {
   const urlObj = new URL(url);
   const isHttps = urlObj.protocol === "https:";
   const client = isHttps ? https : http;
+  if (body && typeof body === "object") {
+    headers["Content-Type"] = "application/json";
+  }
   const options = {
     method,
     hostname: urlObj.hostname,
@@ -6328,6 +6333,10 @@ function makeRequest(method, url, headers = {}, body = null, handler, allowInsec
       data += chunk;
     });
     res.on("end", () => {
+      if (res.statusCode === 401) {
+        handler({ error: "Unauthorized", code: 401 });
+        return;
+      }
       try {
         const parsed = JSON.parse(data);
         handler(parsed);
@@ -6351,37 +6360,53 @@ function makeRequest(method, url, headers = {}, body = null, handler, allowInsec
 function sendToPropertyInspector(_context, payload) {
   streamDeck.ui.current?.sendToPropertyInspector(payload);
 }
-function pihole_connect(settings2, handler) {
+function pihole_connect({ settings: settings2, session }, handler) {
   let req_addr = `${settings2.protocol}://${settings2.ph_addr}/api/auth`;
-  makeRequest("POST", req_addr, {
-    "Content-Type": "application/json"
-  }, { password: settings2.ph_key }, handler, settings2.allow_insecure);
+  streamDeck.logger.debug(`POST request to ${req_addr}`);
+  if (session == null || session.valid === false) {
+    sendRequest("POST", req_addr, {}, { password: settings2.ph_key }, handler, settings2.allow_insecure);
+  } else {
+    sendRequest("GET", req_addr, {
+      "X-FTL-SID": session.sid
+    }, null, (response) => {
+      if ("error" in response && response.code === 401) {
+        sendRequest("POST", req_addr, {}, { password: settings2.ph_key }, handler, settings2.allow_insecure);
+      } else {
+        streamDeck.logger.debug("reusing existing session");
+        handler(response);
+      }
+    }, settings2.allow_insecure);
+  }
 }
 function pihole_end({ settings: settings2, session }) {
   if (session == null) return;
   let req_addr = `${settings2.protocol}://${settings2.ph_addr}/api/auth`;
-  makeRequest("DELETE", req_addr, {
+  streamDeck.logger.debug(`DELETE request to ${req_addr}`);
+  session.valid = false;
+  sendRequest("DELETE", req_addr, {
     "X-FTL-SID": session.sid
   }, null, () => {
   }, settings2.allow_insecure);
 }
 function getBlockingStatus(settings2, session, handler) {
   let req_addr = `${settings2.protocol}://${settings2.ph_addr}/api/dns/blocking`;
-  makeRequest("GET", req_addr, {
+  streamDeck.logger.debug(`GET request to ${req_addr}`);
+  sendRequest("GET", req_addr, {
     "X-FTL-SID": session.sid
   }, null, handler, settings2.allow_insecure);
 }
 function setBlockingStatus(settings2, session, enabled, timer) {
   let req_addr = `${settings2.protocol}://${settings2.ph_addr}/api/dns/blocking`;
-  makeRequest("POST", req_addr, {
-    "Content-Type": "application/json",
+  streamDeck.logger.debug(`POST request to ${req_addr}`);
+  sendRequest("POST", req_addr, {
     "X-FTL-SID": session.sid
   }, { blocking: enabled, timer }, () => {
   }, settings2.allow_insecure);
 }
 function getStatsSummary(settings2, session, handler) {
   let req_addr = `${settings2.protocol}://${settings2.ph_addr}/api/stats/summary`;
-  makeRequest("GET", req_addr, {
+  streamDeck.logger.debug(`GET request to ${req_addr}`);
+  sendRequest("GET", req_addr, {
     "X-FTL-SID": session.sid
   }, null, handler, settings2.allow_insecure);
 }
@@ -6416,22 +6441,28 @@ function enable(context) {
 function pollPihole(context) {
   let { settings: settings2, session } = instances[context];
   getBlockingStatus(settings2, session, (response) => {
+    streamDeck.logger.debug(`response: ${JSON.stringify(response)}`);
     if ("error" in response) {
+      streamDeck.logger.debug(`${instances[context].action} error`);
       streamDeck.actions.getActionById(context)?.showAlert();
       streamDeck.logger.error(response);
     } else {
       if (response.blocking == "disabled" && settings2.show_status) {
+        streamDeck.logger.debug(`${instances[context].action} offline`);
         streamDeck.actions.getActionById(context)?.setState(1);
       } else if (response.blocking == "enabled" && settings2.show_status) {
+        streamDeck.logger.debug(`${instances[context].action} online`);
         streamDeck.actions.getActionById(context)?.setState(0);
       }
       if (settings2.stat != "none") {
         getStatsSummary(settings2, session, (response2) => {
+          streamDeck.logger.debug(`response: ${JSON.stringify(response2)}`);
           if ("error" in response2) {
             streamDeck.actions.getActionById(context)?.showAlert();
             streamDeck.logger.error(response2);
           } else {
             let stat = process_stat(response2, settings2.stat);
+            streamDeck.logger.debug(`${settings2.stat}: ${stat}`);
             streamDeck.actions.getActionById(context)?.setTitle(stat);
           }
         });
@@ -6461,7 +6492,22 @@ function process_stat(stats, type) {
       return stats.clients.active.toLocaleString();
   }
 }
-function writeSettings(context, action, settings2) {
+function loadSessionCache(context, globalSettings) {
+  if (globalSettings && "sessions" in globalSettings) {
+    sessionCache = globalSettings.sessions;
+  }
+  if (sessionCache[context] && !("session" in instances[context])) {
+    instances[context].session = { sid: sessionCache[context] };
+    delete sessionCache[context];
+  }
+}
+function saveSessionCache(context) {
+  sessionCache[context] = instances[context].session.sid;
+  streamDeck.settings.setGlobalSettings({
+    sessions: sessionCache
+  });
+}
+function writeSettings(context, action, settings2, globalSettings) {
   if (!(context in instances)) {
     instances[context] = { "action": action };
   }
@@ -6475,9 +6521,12 @@ function writeSettings(context, action, settings2) {
   if ("poller" in instances[context]) {
     clearInterval(instances[context].poller);
   }
-  pihole_end(instances[context]);
+  if (!("session" in instances[context])) {
+    loadSessionCache(context, globalSettings);
+  }
   instances[context].settings.show_status = true;
   const onReady = (response) => {
+    streamDeck.logger.debug(`response: ${JSON.stringify(response)}`);
     if ("error" in response) {
       streamDeck.actions.getActionById(context)?.showAlert();
       instances[context].errorState = response.error.message || response.error;
@@ -6492,15 +6541,17 @@ function writeSettings(context, action, settings2) {
         const sessionExpired = "lastUpdateTime" in instances[context] && timeNow - instances[context].lastUpdateTime > instances[context].session.validity;
         instances[context].lastUpdateTime = timeNow;
         if (sessionExpired) {
+          streamDeck.logger.debug("session expired, reconnecting");
           clearInterval(instances[context].poller);
-          pihole_connect(instances[context].settings, onReady);
+          pihole_connect(instances[context], onReady);
         } else {
           pollPihole(context);
         }
       }, Math.ceil(response.took) * 1e3);
+      saveSessionCache(context);
     }
   };
-  pihole_connect(instances[context].settings, onReady);
+  pihole_connect(instances[context], onReady);
 }
 var PiholeAction = class extends SingletonAction {
   constructor(manifestId, handler) {
@@ -6508,8 +6559,9 @@ var PiholeAction = class extends SingletonAction {
     this.manifestId = manifestId;
     this.handler = handler;
   }
-  onWillAppear(ev) {
-    writeSettings(ev.action.id, this.manifestId, ev.payload.settings);
+  async onWillAppear(ev) {
+    const globalSettings = await streamDeck.settings.getGlobalSettings();
+    writeSettings(ev.action.id, this.manifestId, ev.payload.settings, globalSettings);
   }
   onWillDisappear(ev) {
     const contextId = ev.action.id;
@@ -6543,14 +6595,6 @@ var PiholeAction = class extends SingletonAction {
     this.handler(contextId);
   }
 };
-var cleaned = false;
-function cleanup() {
-  if (cleaned) return;
-  cleaned = true;
-  Object.values(instances).forEach(pihole_end);
-}
-process.on("SIGTERM", cleanup);
-process.on("exit", cleanup);
 actions = {
   "us.johnholbrook.pihole.toggle": toggle,
   "us.johnholbrook.pihole.temporarily-disable": temporarily_disable,
