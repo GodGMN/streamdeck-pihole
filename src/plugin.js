@@ -69,11 +69,6 @@ function sendRequest(method, url, headers = {}, body = null, handler, allowInsec
     req.end();
 }
 
-// send message to Property Inspector
-function sendToPropertyInspector(_context, payload){
-    streamDeck.ui.current?.sendToPropertyInspector(payload);
-}
-
 // get auth token from pi-hole API that is valid until 30 min of inactivity
 function pihole_connect({ settings, session }, handler){
     let req_addr = `${settings.protocol}://${settings.ph_addr}/api/auth`;
@@ -287,11 +282,11 @@ function writeSettings(context, action, settings, globalSettings){
         if ("error" in response){
             streamDeck.actions.getActionById(context)?.showAlert();
             instances[context].errorState = response.error.message || response.error;
-            sendToPropertyInspector(context, { error: instances[context].errorState });
+            streamDeck.ui.current?.sendToPropertyInspector({ error: instances[context].errorState });
             streamDeck.logger.error(response);
         } else{
             instances[context].errorState = false;
-            sendToPropertyInspector(context, { success: true });
+            streamDeck.ui.current?.sendToPropertyInspector({ success: true });
             instances[context].session = response.session;
             instances[context].poller = setInterval(() => {
                 const timeNow = Math.floor(Date.now() / 1000);
@@ -345,7 +340,7 @@ class PiholeAction extends SingletonAction {
         if (ev.payload && ev.payload.action === "getErrorState"){
             // Send current error state if it exists
             if (contextId in instances){
-                sendToPropertyInspector(contextId, instances[contextId].errorState ? {
+                streamDeck.ui.current?.sendToPropertyInspector(instances[contextId].errorState ? {
                     error: instances[contextId].errorState
                 } : { success: instances[contextId].errorState === false });
             }
@@ -358,8 +353,7 @@ class PiholeAction extends SingletonAction {
     }
     
     onKeyUp(ev) {
-        const contextId = ev.action.id;
-        this.handler(contextId);
+        this.handler(ev.action.id);
     }
 }
 
