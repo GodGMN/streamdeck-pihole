@@ -12,7 +12,7 @@ The .streamDeckPlugin file can also be downloaded from this repository's "releas
 1. If you have the plugin installed from the Stream Deck store, uninstall it.
 2. Install Node.js and the Stream Deck CLI as described on [this page](https://docs.elgato.com/streamdeck/cli/intro).
 3. Clone this repository, then navigate to it in a terminal.
-4. Run `npm install` to install development dependencies.
+4. Run `npm install` to install dependencies and build the plugin.
 5. Run `streamdeck link us.johnholbrook.pihole.sdPlugin`.
 
 You have now linked (installed) the local version of the plugin for development. At this point, you can make changes to the plugin.
