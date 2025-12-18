@@ -5,6 +5,7 @@
   "main": "us.johnholbrook.pihole.sdPlugin/bin/plugin.js",
   "scripts": {
     "build": "esbuild src/plugin.js --bundle --format=cjs --outfile=us.johnholbrook.pihole.sdPlugin/bin/plugin.js --platform=node --target=node20",
+    "postinstall": "npm run build",
     "test": "echo \"Error: no test specified\" && exit 1",
     "watch": "npm run build -- --watch"
   },

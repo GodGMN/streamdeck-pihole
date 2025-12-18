@@ -2,3 +2,4 @@
 *.streamDeckPlugin
 logs
 node_modules
+*/bin/plugin.js

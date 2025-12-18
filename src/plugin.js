@@ -7,7 +7,7 @@ var instances = {}
 var sessionCache = {}
 
 // Helper function to make HTTP/HTTPS requests
-function sendRequest(method, url, headers = {}, body = null, handler, allowInsecure = false) {
+function sendRequest(method, url, headers = {}, body = null, handler, allowInsecure = false){
     const urlObj = new URL(url);
     const isHttps = urlObj.protocol === 'https:';
     const client = isHttps ? https : http;

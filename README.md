@@ -26,4 +26,4 @@ To test changes to the code:
 2. If you have edited `src/plugin.js`, run `npm run build` to generate `bin/plugin.js` with dependencies bundled. You can also run `npm run watch` to automatically rebuild when you save changes.
 3. Run `streamdeck restart us.johnholbrook.pihole` to relaunch the Stream Deck app with your latest changes.
 
-**Note:** See the [Stream Deck SDK docs](https://docs.elgato.com/streamdeck/sdk/introduction/getting-started).
+**Tip:** For more info see the [Stream Deck SDK docs](https://docs.elgato.com/streamdeck/sdk/introduction/getting-started).
