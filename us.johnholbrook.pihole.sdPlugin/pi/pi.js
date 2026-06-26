@@ -7,16 +7,6 @@ function send(data){
     websocket.send(JSON.stringify(data));
 }
 
-// write to the log
-function log(message){
-    send({
-        "event": "logMessage",
-        "payload": {
-            "message": message
-        }
-    });
-}
-
 // called by the stream deck software when the PI is inizialized
 function connectElgatoStreamDeckSocket(inPort, inPropertyInspectorUUID, inRegisterEvent, inInfo, inActionInfo){
     websocket = new WebSocket(`ws://127.0.0.1:${inPort}`);
@@ -28,7 +18,7 @@ function connectElgatoStreamDeckSocket(inPort, inPropertyInspectorUUID, inRegist
     }
 
     websocket.onmessage = function(evt){
-        jsonObj = JSON.parse(evt.data);
+        let jsonObj = JSON.parse(evt.data);
         let event = jsonObj.event;
     }
 

@@ -38,8 +38,8 @@ function pihole_connect(settings, handler){
 function pihole_end({ settings, session }){
     if (session == null) return;
     let req_addr = `${settings.protocol}://${settings.ph_addr}/api/auth`;
-    // log(`call request to ${req_addr}`);
     let xhr = new XMLHttpRequest();
+    xhr.timeout = 5000;
     xhr.open("DELETE", req_addr);
     xhr.setRequestHeader("X-FTL-SID", session.sid);
     xhr.send();
@@ -48,15 +48,15 @@ function pihole_end({ settings, session }){
 // make a call to check if pi-hole is enabled
 function getBlockingStatus(settings, session, handler){
     let req_addr = `${settings.protocol}://${settings.ph_addr}/api/dns/blocking`;
-    // log(`call request to ${req_addr}`);
     let xhr = new XMLHttpRequest();
+    xhr.timeout = 5000;
     xhr.open("GET", req_addr);
     xhr.setRequestHeader("X-FTL-SID", session.sid);
     xhr.onload = function(){
         let data = JSON.parse(xhr.response);
         handler(data);
     }
-    xhr.onerror = function(){
+    xhr.onerror = xhr.ontimeout = function(){
         handler({"error": "couldn't reach Pi-hole"});
     }
     xhr.send();
@@ -76,15 +76,15 @@ function setBlockingStatus(settings, session, enabled, timer){
 // get stats for the pi-hole (# queries, # clients, etc.) and pass to a handler function
 function getStatsSummary(settings, session, handler){
     let req_addr = `${settings.protocol}://${settings.ph_addr}/api/stats/summary`;
-    // log(`get_status request to ${req_addr}`);
     let xhr = new XMLHttpRequest();
+    xhr.timeout = 5000;
     xhr.open("GET", req_addr);
     xhr.setRequestHeader("X-FTL-SID", session.sid);
     xhr.onload = function(){
         let data = JSON.parse(xhr.response);
         handler(data);
     }
-    xhr.onerror = function(){
+    xhr.onerror = xhr.ontimeout = function(){
         handler({"error": "couldn't reach Pi-hole"});
     }
     xhr.send();
@@ -95,7 +95,7 @@ function temporarily_disable(context){
     let { settings, session } = instances[context];
     getBlockingStatus(settings, session, response => {
         if (response.blocking == "enabled"){  // it only makes sense to temporarily disable p-h if it's currently enabled
-            setBlockingStatus(settings, session, false, parseInt(settings.disable_time))
+            setBlockingStatus(settings, session, false, parseInt(settings.disable_time) || 300)
         }
     });
 }
@@ -128,10 +128,12 @@ function enable(context){
 }
 
 // poll p-h and set the state and button text appropriately
-// (called once per second per instance)
 function pollPihole(context){
+    if (instances[context].polling) return;
+    instances[context].polling = true;
     let { settings, session } = instances[context];
     getBlockingStatus(settings, session, response => {
+        if (instances[context]) instances[context].polling = false;
         // log(`response: ${JSON.stringify(response)}`)
         if ("error" in response){ // couldn't reach p-h, display a warning
             // log(`${instances[context].action} error`)
@@ -204,6 +206,8 @@ function process_stat(stats, type){
                 return stats.clients.total.toLocaleString();
             case "unique_clients":
                 return stats.clients.active.toLocaleString();
+            default:
+                return "?";
         }
     } catch(e) {
         log(`process_stat error for "${type}": ${e.message}. Response: ${JSON.stringify(stats)}`);
@@ -225,15 +229,15 @@ function setState(context, state){
 
 // write settings
 function writeSettings(context, action, settings){
-    // write the settings
-    if (!(context in instances)){ 
+    if (!(context in instances)){
         instances[context] = {"action": action};
     }
-    instances[context].settings = settings;
-    if (instances[context].settings.ph_addr == ""){
-        instances[context].settings.ph_addr = "pi.hole";
+    const inst = instances[context];
+    inst.settings = settings;
+    if (inst.settings.ph_addr == ""){
+        inst.settings.ph_addr = "pi.hole";
     }
-    if (instances[context].settings.stat == "none"){
+    if (inst.settings.stat == "none"){
         send({
             "event": "setTitle",
             "context": context,
@@ -243,16 +247,20 @@ function writeSettings(context, action, settings){
         });
     }
 
-    // clean up old p-h instance
-    if ("poller" in instances[context]){
-        clearInterval(instances[context].poller);
-    }
-    pihole_end(instances[context]);
+    // Skip reconnect if connection parameters haven't changed and a session exists.
+    // This prevents a double-connect when willAppear and didReceiveSettings both fire on load.
+    const connKey = `${settings.protocol}://${inst.settings.ph_addr}:${settings.ph_key}`;
+    if (inst.connKey === connKey && inst.session) return;
+    inst.connKey = connKey;
 
-    // poll p-h to get status
-    instances[context].settings.show_status = true;
+    // clean up old p-h instance
+    if ("poller" in inst){
+        clearInterval(inst.poller);
+    }
+    pihole_end(inst);
+
+    inst.settings.show_status = true;
     const onReady = (response) => {
-        // log(`response: ${JSON.stringify(response)}`)
         if ("error" in response){
             send({
                 "event": "showAlert",
@@ -260,22 +268,21 @@ function writeSettings(context, action, settings){
             });
             log(response);
         } else{
-            instances[context].session = response.session;
-            instances[context].sessionCreatedAt = Math.floor(Date.now() / 1000);
-            instances[context].poller = setInterval(() => {
+            inst.session = response.session;
+            inst.sessionCreatedAt = Math.floor(Date.now() / 1000);
+            inst.poller = setInterval(() => {
                 const timeNow = Math.floor(Date.now() / 1000);
-                const sessionExpired = (timeNow - instances[context].sessionCreatedAt) > instances[context].session.validity;
+                const sessionExpired = (timeNow - inst.sessionCreatedAt) > inst.session.validity;
                 if (sessionExpired){
-                    clearInterval(instances[context].poller);
-                    pihole_connect(instances[context].settings, onReady);
+                    clearInterval(inst.poller);
+                    pihole_connect(inst.settings, onReady);
                 } else{
                     pollPihole(context);
                 }
-            }, 1000);
+            }, 5000);
         }
-        // log(JSON.stringify(instances));
     }
-    pihole_connect(instances[context].settings, onReady);
+    pihole_connect(inst.settings, onReady);
 }
 
 // called by the stream deck software when the plugin is initialized
@@ -328,6 +335,7 @@ function connectElgatoStreamDeckSocket(inPort, inPluginUUID, inRegisterEvent, in
 
         // handle a keypress
         else if (event == "keyUp"){
+            if (!instances[context]) return;
             if (action == "us.johnholbrook.pihole.toggle"){
                 toggle(context);
             }
