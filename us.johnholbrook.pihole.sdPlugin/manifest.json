@@ -1,7 +1,7 @@
 {
 	"SDKVersion": 2,
 	"Author": "John Holbrook",
-	"CodePath": "code.html",
+	"CodePath": "bin/plugin.js",
 	"PropertyInspectorPath": "pi/index_pi.html",
 	"Description": "Monitor & Control Pi-hole from your Stream Deck",
 	"Name": "Pi-hole",
@@ -77,5 +77,9 @@
 			],
 			"UUID": "us.johnholbrook.pihole.enable"
 		}
-	]
+	],
+	"Nodejs": {
+		"Version": "20",
+		"Debug": "enabled"
+	}
 }
