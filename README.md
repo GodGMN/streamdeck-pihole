@@ -1,4 +1,40 @@
-# streamdeck-pihole
+# streamdeck-pihole (maintained fork)
+
+[Stream Deck](https://www.elgato.com/en/stream-deck) plugin for monitoring & controlling [Pi-hole](https://pi-hole.net).
+
+This is a community-maintained fork of the original
+[`johnholbrook/streamdeck-pihole`](https://github.com/johnholbrook/streamdeck-pihole).
+The upstream project appears to no longer be actively maintained, so this fork
+bundles the fixes and improvements contributed in open pull requests that never
+reached `main`.
+
+## What's changed versus upstream
+
+- **Backend migrated to Node.js** — replaces the Chrome-webworker backend with a
+  Node.js process built on the [Elgato Stream Deck SDK](https://docs.elgato.com/streamdeck/sdk).
+  This fixes broken logging, adds an **HTTPS "allow self-signed certs"** option
+  (`rejectUnauthorized: false`), and cleans up Pi-hole auth sessions so the
+  session-seat limit isn't exhausted. *Contributed by [@t1m0thyj](https://github.com/t1m0thyj) in [PR #32](https://github.com/johnholbrook/streamdeck-pihole/pull/32).*
+- **Reliability fixes for Pi-hole v6** — corrects session-expiry handling, adds a
+  polling reentrancy guard (no more overlapping polls / warning flashes), makes
+  stat rendering resilient to missing fields, and prevents double-connects on
+  load. *Contributed by [@jpwalsh1](https://github.com/johnholbrook/streamdeck-pihole/pull/33) in [PR #33](https://github.com/johnholbrook/streamdeck-pihole/pull/33), with a follow-up port of the same fixes into the Node backend.*
+
+Both contributors' commits are preserved in this repository's history. If you
+find these changes useful, please consider giving them a star on their forks
+([t1m0thyj](https://github.com/t1m0thyj/streamdeck-pihole),
+[jpwalsh1](https://github.com/jpwalsh1/streamdeck-pihole)) and upvoting the
+upstream PRs so they can be merged.
+
+---
+
+*Original project by [@johnholbrook](https://github.com/johnholbrook). The
+original README follows below.*
+
+---
+
+## Original README
+
 [Stream Deck](https://www.elgato.com/en/stream-deck) plugin for monitoring & controlling [Pi-hole](https://pi-hole.net).
 
 Available on the Stream Deck App Store: https://apps.elgato.com/plugins/us.johnholbrook.pihole.

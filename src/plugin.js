@@ -137,7 +137,7 @@ function temporarily_disable(context){
     let { settings, session } = instances[context];
     getBlockingStatus(settings, session, response => {
         if (response.blocking == "enabled"){  // it only makes sense to temporarily disable p-h if it's currently enabled
-            setBlockingStatus(settings, session, false, parseInt(settings.disable_time))
+            setBlockingStatus(settings, session, false, parseInt(settings.disable_time) || 300)
         }
     });
 }
@@ -172,8 +172,11 @@ function enable(context){
 // poll p-h and set the state and button text appropriately
 // (called once per second per instance)
 function pollPihole(context){
+    if (instances[context].polling) return;
+    instances[context].polling = true;
     let { settings, session } = instances[context];
     getBlockingStatus(settings, session, response => {
+        if (instances[context]) instances[context].polling = false;
         streamDeck.logger.debug(`response: ${JSON.stringify(response)}`)
         if ("error" in response){ // couldn't reach p-h, display a warning
             streamDeck.logger.debug(`${instances[context].action} error`)
@@ -214,25 +217,32 @@ function pollPihole(context){
 // process the pi-hole stats to make them more human-readable,
 // then cast to string
 function process_stat(stats, type){
-    switch (type){
-        case "domains_being_blocked":
-            return stats.gravity.domains_being_blocked.toLocaleString();
-        case "dns_queries_today":
-            return stats.queries.total.toLocaleString();
-        case "ads_blocked_today":
-            return stats.queries.blocked.toLocaleString();
-        case "ads_percentage_today":
-            return stats.queries.percent_blocked.toFixed(2) + "%";
-        case "unique_domains":
-            return stats.queries.unique_domains.toLocaleString();
-        case "queries_forwarded":
-            return stats.queries.forwarded.toLocaleString();
-        case "queries_cached":
-            return stats.queries.cached.toLocaleString();
-        case "clients_ever_seen":
-            return stats.clients.total.toLocaleString();
-        case "unique_clients":
-            return stats.clients.active.toLocaleString();
+    try {
+        switch (type){
+            case "domains_being_blocked":
+                return stats.gravity.domains_being_blocked.toLocaleString();
+            case "dns_queries_today":
+                return stats.queries.total.toLocaleString();
+            case "ads_blocked_today":
+                return stats.queries.blocked.toLocaleString();
+            case "ads_percentage_today":
+                return (stats.queries.percent_blocked ?? 0).toFixed(2) + "%";
+            case "unique_domains":
+                return stats.queries.unique_domains.toLocaleString();
+            case "queries_forwarded":
+                return stats.queries.forwarded.toLocaleString();
+            case "queries_cached":
+                return stats.queries.cached.toLocaleString();
+            case "clients_ever_seen":
+                return stats.clients.total.toLocaleString();
+            case "unique_clients":
+                return stats.clients.active.toLocaleString();
+            default:
+                return "?";
+        }
+    } catch(e) {
+        streamDeck.logger.error(`process_stat error for "${type}": ${e.message}. Response: ${JSON.stringify(stats)}`);
+        return "?";
     }
 }
 
@@ -267,6 +277,12 @@ function writeSettings(context, action, settings, globalSettings){
         streamDeck.actions.getActionById(context)?.setTitle("");
     }
 
+    // Skip reconnect if connection parameters haven't changed and a session exists.
+    // This prevents a double-connect when onWillAppear and onDidReceiveSettings both fire on load.
+    const connKey = `${settings.protocol}://${instances[context].settings.ph_addr}:${settings.ph_key}`;
+    if (instances[context].connKey === connKey && instances[context].session) return;
+    instances[context].connKey = connKey;
+
     // clean up old p-h instance
     if ("poller" in instances[context]){
         clearInterval(instances[context].poller);
@@ -288,11 +304,10 @@ function writeSettings(context, action, settings, globalSettings){
             instances[context].errorState = false;
             streamDeck.ui.current?.sendToPropertyInspector({ success: true });
             instances[context].session = response.session;
+            instances[context].sessionCreatedAt = Math.floor(Date.now() / 1000);
             instances[context].poller = setInterval(() => {
                 const timeNow = Math.floor(Date.now() / 1000);
-                const sessionExpired = "lastUpdateTime" in instances[context] &&
-                    (timeNow - instances[context].lastUpdateTime) > instances[context].session.validity;
-                instances[context].lastUpdateTime = timeNow;
+                const sessionExpired = (timeNow - instances[context].sessionCreatedAt) > instances[context].session.validity;
                 if (sessionExpired){
                     streamDeck.logger.debug("session expired, reconnecting");
                     clearInterval(instances[context].poller);
@@ -300,7 +315,7 @@ function writeSettings(context, action, settings, globalSettings){
                 } else{
                     pollPihole(context);
                 }
-            }, Math.ceil(response.took) * 1000);
+            }, 5000);
             saveSessionCache(context);
         }
     }
@@ -353,6 +368,7 @@ class PiholeAction extends SingletonAction {
     }
     
     onKeyUp(ev) {
+        if (!(ev.action.id in instances)) return;
         this.handler(ev.action.id);
     }
 }
