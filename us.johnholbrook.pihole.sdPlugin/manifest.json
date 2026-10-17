@@ -1,6 +1,6 @@
 {
 	"SDKVersion": 2,
-	"Author": "John Holbrook",
+	"Author": "John Holbrook (fork by GodGMN)",
 	"CodePath": "bin/plugin.js",
 	"PropertyInspectorPath": "pi/index_pi.html",
 	"Description": "Monitor & Control Pi-hole from your Stream Deck",
@@ -9,7 +9,7 @@
 	"Category": "Pi-hole",
 	"CategoryIcon": "img/category-icon",
 	"Icon": "img/toggle",
-	"URL": "https://github.com/johnholbrook/streamdeck-pihole",
+	"URL": "https://github.com/GodGMN/streamdeck-pihole",
 	"Version": "2.1.0.0",
 	"OS": [
 		{

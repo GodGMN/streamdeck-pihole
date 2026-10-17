@@ -1,12 +1,38 @@
-# streamdeck-pihole (maintained fork)
+# streamdeck-pihole — maintained fork
+
+> [!IMPORTANT]
+> **This is an unofficial, community-maintained fork** of
+> [`johnholbrook/streamdeck-pihole`](https://github.com/johnholbrook/streamdeck-pihole),
+> maintained by [@GodGMN](https://github.com/GodGMN). It is not affiliated with
+> or endorsed by the original author, and it is **not** the version published on
+> the Elgato Marketplace. Report problems with this build
+> [here](https://github.com/GodGMN/streamdeck-pihole/issues), not upstream.
 
 [Stream Deck](https://www.elgato.com/en/stream-deck) plugin for monitoring & controlling [Pi-hole](https://pi-hole.net).
 
-This is a community-maintained fork of the original
-[`johnholbrook/streamdeck-pihole`](https://github.com/johnholbrook/streamdeck-pihole).
-The upstream project appears to no longer be actively maintained, so this fork
-bundles the fixes and improvements contributed in open pull requests that never
-reached `main`.
+The upstream project has had no commits since March 2025, so this fork
+bundles fixes and improvements contributed in open pull requests that never
+reached `main`, most importantly working Pi-hole v6 support.
+
+| | Original | This fork |
+| --- | --- | --- |
+| Repository | [johnholbrook/streamdeck-pihole](https://github.com/johnholbrook/streamdeck-pihole) | [GodGMN/streamdeck-pihole](https://github.com/GodGMN/streamdeck-pihole) |
+| Distribution | [Elgato Marketplace](https://apps.elgato.com/plugins/us.johnholbrook.pihole) | [GitHub releases](https://github.com/GodGMN/streamdeck-pihole/releases) only |
+| Version line | 2.0.x | 2.1.x and later |
+| Backend | Browser (Chrome web worker) | Node.js (Elgato SDK) |
+
+## Installing this fork
+
+1. Download the latest `.streamDeckPlugin` from
+   [Releases](https://github.com/GodGMN/streamdeck-pihole/releases).
+2. Double-click it, or in Stream Deck go to **Settings → Plugins → ⋯ → Import plugin**.
+
+The fork keeps the original plugin ID (`us.johnholbrook.pihole`) on purpose,
+so it **replaces** the Marketplace version and your existing Pi-hole buttons
+keep their settings. Because of that, the two can't be installed side by side.
+To go back to the original, uninstall this one and reinstall from the
+Marketplace. Updates for the fork don't arrive through the Marketplace, so
+watch this repository's releases.
 
 ## What's changed versus upstream
 
@@ -18,7 +44,7 @@ reached `main`.
 - **Reliability fixes for Pi-hole v6** — corrects session-expiry handling, adds a
   polling reentrancy guard (no more overlapping polls / warning flashes), makes
   stat rendering resilient to missing fields, and prevents double-connects on
-  load. *Contributed by [@jpwalsh1](https://github.com/johnholbrook/streamdeck-pihole/pull/33) in [PR #33](https://github.com/johnholbrook/streamdeck-pihole/pull/33), with a follow-up port of the same fixes into the Node backend.*
+  load. *Contributed by [@jpwalsh1](https://github.com/jpwalsh1) in [PR #33](https://github.com/johnholbrook/streamdeck-pihole/pull/33), with a follow-up port of the same fixes into the Node backend.*
 
 Both contributors' commits are preserved in this repository's history. If you
 find these changes useful, please consider giving them a star on their forks
@@ -29,7 +55,8 @@ upstream PRs so they can be merged.
 ---
 
 *Original project by [@johnholbrook](https://github.com/johnholbrook). The
-original README follows below.*
+original README follows, unchanged except for notes marked "Fork note". Store
+links in it refer to the original plugin, not this fork.*
 
 ---
 
@@ -41,13 +68,16 @@ Available on the Stream Deck App Store: https://apps.elgato.com/plugins/us.johnh
 
 The .streamDeckPlugin file can also be downloaded from this repository's "releases" page, but installation from the store is preferred for automatic updates.
 
+> **Fork note:** the Marketplace and the upstream releases page serve the
+> original plugin. For this fork, see [Installing this fork](#installing-this-fork).
+
 ## Developing
 
 ### Install from Source
 
 1. If you have the plugin installed from the Stream Deck store, uninstall it.
 2. Install Node.js and the Stream Deck CLI as described on [this page](https://docs.elgato.com/streamdeck/cli/intro).
-3. Clone this repository, then navigate to it in a terminal.
+3. Clone this repository (`git clone https://github.com/GodGMN/streamdeck-pihole.git` for the fork), then navigate to it in a terminal.
 4. Run `npm install` to install dependencies and build the plugin.
 5. Run `streamdeck link us.johnholbrook.pihole.sdPlugin`.
 

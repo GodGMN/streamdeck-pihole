@@ -1,8 +1,16 @@
 {
   "name": "streamdeck-pihole",
   "version": "1.0.0",
-  "description": "",
+  "description": "Maintained fork of johnholbrook/streamdeck-pihole: Stream Deck plugin for monitoring & controlling Pi-hole",
   "main": "us.johnholbrook.pihole.sdPlugin/bin/plugin.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GodGMN/streamdeck-pihole.git"
+  },
+  "homepage": "https://github.com/GodGMN/streamdeck-pihole#readme",
+  "bugs": {
+    "url": "https://github.com/GodGMN/streamdeck-pihole/issues"
+  },
   "scripts": {
     "build": "esbuild src/plugin.js --bundle --format=cjs --outfile=us.johnholbrook.pihole.sdPlugin/bin/plugin.js --platform=node --target=node20",
     "postinstall": "npm run build",
@@ -11,7 +19,6 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
   "type": "commonjs",
   "dependencies": {
     "@elgato/streamdeck": "^1.4.1"
